@@ -16,8 +16,8 @@ const Dashboard = () => {
     const fetchMetrics = async () => {
       try {
         const [ramRes, cpuRes] = await Promise.all([
-          axios.get('http://localhost:3001/api/ram/latest'),
-          axios.get('http://localhost:3001/api/cpu/latest'),
+          axios.get('http://monitor_api:3001/api/ram/latest'),
+          axios.get('http://monitor_api:3001/api/cpu/latest'),
         ]);
 
         const ramData = ramRes.data;

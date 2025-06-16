@@ -1,0 +1,1 @@
+/home/evelio/Documentos/SOPES1_1S2025/SOPES1_P1_202010040/Proyecto1_Fase1/kernel/ram_202010040.o

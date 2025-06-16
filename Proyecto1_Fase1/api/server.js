@@ -12,12 +12,13 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.json());
 
-// Configuración de la base de datos
+// Configuración de la base de datos usando variables de entorno
 const dbConfig = {
-  host: 'localhost', 
-  user: 'user_monitoreo',
-  password: 'Ingenieria2025.',
-  database: 'sistema_monitoreo',
+  host: process.env.DB_HOST || 'monitor_db', // Nombre del servicio de DB en docker-compose
+  port: process.env.DB_PORT || 3306,
+  user: process.env.DB_USER || 'user_monitoreo',
+  password: process.env.DB_PASSWORD || 'Ingenieria2025.',
+  database: process.env.DB_NAME || 'sistema_monitoreo',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
@@ -25,22 +26,39 @@ const dbConfig = {
 
 let pool;
 
-// Inicializar conexión a la base de datos
+// Inicializar conexión a la base de datos con reintentos
 async function initDatabase() {
-  try {
-    pool = mysql.createPool(dbConfig);
-    
-    console.log('Base de datos inicializada correctamente');
-  } catch (error) {
-    console.error('Error al inicializar la base de datos:', error);
-    process.exit(1);
+  let retries = 5;
+  
+  while (retries > 0) {
+    try {
+      pool = mysql.createPool(dbConfig);
+      
+      // Probar la conexión
+      const connection = await pool.getConnection();
+      await connection.ping();
+      connection.release();
+      
+      console.log('Base de datos inicializada correctamente');
+      return;
+    } catch (error) {
+      console.error(`Error al conectar a la base de datos. Intentos restantes: ${retries - 1}`, error.message);
+      retries--;
+      
+      if (retries === 0) {
+        console.error('No se pudo conectar a la base de datos después de varios intentos');
+        process.exit(1);
+      }
+      
+      // Esperar 5 segundos antes del siguiente intento
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
   }
 }
 
 // Insertar métricas de RAM
 app.post('/api/ram', async (req, res) => {
   try {
-
     const data = req.body.data;
 
     // Mapear claves estandar a las de base de datos
@@ -123,7 +141,6 @@ app.post('/api/cpu', async (req, res) => {
   }
 });
 
-
 // Obtener última métrica de RAM
 app.get('/api/ram/latest', async (req, res) => {
   try {
@@ -158,7 +175,6 @@ app.get('/api/cpu/latest', async (req, res) => {
   }
 });
 
-
 // Ruta raíz
 app.get('/', (req, res) => {
   res.json({ 
@@ -176,7 +192,7 @@ app.get('/', (req, res) => {
 async function startServer() {
   await initDatabase();
   
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor corriendo en puerto ${PORT}`);
   });
 }
@@ -185,6 +201,23 @@ async function startServer() {
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Promise rejection:', err);
   process.exit(1);
+});
+
+// Manejo graceful de shutdown
+process.on('SIGTERM', async () => {
+  console.log('Cerrando servidor...');
+  if (pool) {
+    await pool.end();
+  }
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('Cerrando servidor...');
+  if (pool) {
+    await pool.end();
+  }
+  process.exit(0);
 });
 
 startServer();

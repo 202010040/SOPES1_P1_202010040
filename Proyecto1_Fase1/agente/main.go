@@ -57,10 +57,21 @@ type MonitoringAgent struct {
 }
 
 func main() {
+	// Obtener configuración desde variables de entorno
+	apiHost := os.Getenv("API_HOST")
+	if apiHost == "" {
+		apiHost = "monitor_api" // nombre del servicio en docker-compose
+	}
+
+	apiPort := os.Getenv("API_PORT")
+	if apiPort == "" {
+		apiPort = "3001"
+	}
+
 	// Configuración del agente
 	config := Config{
-		RAMAPIEndpoint:  "http://localhost:3001/api/ram",
-		CPUAPIEndpoint:  "http://localhost:3001/api/cpu",
+		RAMAPIEndpoint:  fmt.Sprintf("http://%s:%s/api/ram", apiHost, apiPort),
+		CPUAPIEndpoint:  fmt.Sprintf("http://%s:%s/api/cpu", apiHost, apiPort),
 		MonitorInterval: 5 * time.Second,
 		RAMProcFile:     "/proc/ram_202010040",
 		CPUProcFile:     "/proc/cpu_202010040",

@@ -1,14 +1,19 @@
-# frontend/Dockerfile
-FROM node:18-alpine AS builder
+FROM node:22-alpine
 
+# Crear directorio de trabajo
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
 
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/nginx.conf
+# Copiar package.json y package-lock.json
+COPY package*.json ./
+
+# Instalar dependencias
+RUN npm install
+
+# Copiar el resto del código fuente
+COPY . .
+
+# Exponer el puerto 3000 (React Dev Server)
 EXPOSE 3000
-CMD ["nginx", "-g", "daemon off;"]
+
+# Comando para iniciar el servidor de desarrollo
+CMD ["npm", "start"]

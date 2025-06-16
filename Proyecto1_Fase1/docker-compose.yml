@@ -1,16 +1,15 @@
-# docker-compose.yml
 version: '3.8'
 
 services:
   # Base de datos MySQL
-  db:
+  monitor_db:
     image: mysql:8.0
     container_name: monitor_db
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: monitor_db
-      MYSQL_USER: monitor_user
-      MYSQL_PASSWORD: monitor_pass
+      MYSQL_DATABASE: sistema_monitoreo
+      MYSQL_USER: user_monitoreo
+      MYSQL_PASSWORD: Ingenieria2025.
     ports:
       - "3306:3306"
     volumes:
@@ -19,55 +18,65 @@ services:
     networks:
       - monitor-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "user_monitoreo", "-pIngenieria2025."]
+      timeout: 20s
+      retries: 10
+      interval: 30s
 
   # API NodeJS
-  api:
+  monitor_api:
     build:
       context: ./api
       dockerfile: Dockerfile
     container_name: monitor_api
     ports:
-      - "3000:3000"
+      - "3001:3001"
     environment:
       - NODE_ENV=production
-      - DB_HOST=db
+      - DB_HOST=monitor_db
       - DB_PORT=3306
-      - DB_NAME=monitor_db
-      - DB_USER=monitor_user
-      - DB_PASSWORD=monitor_pass
-      - AGENTE_URL=http://agente:8080
+      - DB_NAME=sistema_monitoreo
+      - DB_USER=user_monitoreo
+      - DB_PASSWORD=Ingenieria2025.
     depends_on:
-      - db
+      monitor_db:
+        condition: service_healthy
     networks:
       - monitor-network
     restart: unless-stopped
 
   # Agente de monitoreo Go
-  agente:
+  monitor_agente:
     build:
       context: ./agente
       dockerfile: Dockerfile
     container_name: monitor_agente
-    ports:
-      - "8080:8080"
+    environment:
+      - API_HOST=monitor_api
+      - API_PORT=3001
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
     privileged: true
+    depends_on:
+      - monitor_api
     networks:
       - monitor-network
     restart: unless-stopped
 
   # Frontend
-  frontend:
+  monitor_frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: monitor_frontend
     ports:
-      - "80:80"
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:3001
     depends_on:
-      - api
+      - monitor_api
     networks:
       - monitor-network
     restart: unless-stopped
