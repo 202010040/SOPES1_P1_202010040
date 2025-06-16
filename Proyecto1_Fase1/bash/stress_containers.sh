@@ -1,119 +1,54 @@
 #!/bin/bash
+# Script para crear contenedores de estrés
 
-# Script para crear 10 contenedores que estresen CPU y memoria RAM
-# Autor: 202010040
+set -e
 
-echo "=== Creando contenedores de stress ==="
+echo "🏋️ Creando contenedores para estresar CPU y RAM..."
 
-# Función para limpiar contenedores existentes
-cleanup_containers() {
-    echo "Limpiando contenedores anteriores..."
-    for i in {1..10}; do
-        docker stop stress-container-$i 2>/dev/null || true
-        docker rm stress-container-$i 2>/dev/null || true
-    done
-}
-
-# Función para crear contenedores de stress
-create_stress_containers() {
-    echo "Creando 10 contenedores de stress..."
+# Función para crear contenedor de estrés de CPU
+create_cpu_stress() {
+    local container_name="stress-cpu-$1"
+    echo "Creando contenedor de estrés CPU: $container_name"
     
-    for i in {1..10}; do
-        echo "Creando contenedor stress-container-$i..."
-        
-        # Crear contenedor con stress de CPU y memoria
-        docker run -d \
-            --name stress-container-$i \
-            --memory="256m" \
-            --cpus="0.5" \
-            ubuntu:20.04 \
-            bash -c "
-                apt-get update && apt-get install -y stress;
-                stress --cpu 2 --vm 2 --vm-bytes 128M --timeout 3600s
-            " 2>/dev/null
-        
-        if [ $? -eq 0 ]; then
-            echo "✓ Contenedor stress-container-$i creado"
-        else
-            echo "✗ Error creando contenedor stress-container-$i"
-        fi
-        
-        # Pequeña pausa entre creaciones
-        sleep 2
-    done
+    docker run -d --name $container_name \
+        --rm \
+        ubuntu:20.04 \
+        bash -c "
+            apt-get update && apt-get install -y stress-ng;
+            stress-ng --cpu 1 --timeout 300s --metrics-brief
+        "
 }
 
-# Función para mostrar estado de contenedores
-show_containers_status() {
-    echo ""
-    echo "=== Estado de contenedores de stress ==="
-    docker ps --filter "name=stress-container" --format "table {{.Names}}\t{{.Status}}\t{{.CPUPerc}}\t{{.MemUsage}}"
-}
-
-# Función para monitorear recursos
-monitor_resources() {
-    echo ""
-    echo "=== Monitoreando recursos del sistema ==="
-    echo "Presiona Ctrl+C para detener el monitoreo..."
+# Función para crear contenedor de estrés de RAM
+create_ram_stress() {
+    local container_name="stress-ram-$1"
+    echo "Creando contenedor de estrés RAM: $container_name"
     
-    while true; do
-        clear
-        echo "=== Monitor de Recursos - $(date) ==="
-        echo ""
-        
-        # Mostrar información de RAM desde nuestro módulo
-        if [ -f "/proc/ram_202010040" ]; then
-            echo "RAM (desde módulo kernel):"
-            cat /proc/ram_202010040
-        else
-            echo "Módulo RAM no disponible"
-        fi
-        
-        echo ""
-        
-        # Mostrar información de CPU desde nuestro módulo
-        if [ -f "/proc/cpu_202010040" ]; then
-            echo "CPU (desde módulo kernel):"
-            cat /proc/cpu_202010040
-        else
-            echo "Módulo CPU no disponible"
-        fi
-        
-        echo ""
-        echo "Contenedores activos:"
-        docker ps --filter "name=stress-container" --format "{{.Names}}: {{.Status}}" | head -5
-        
-        sleep 3
-    done
+    docker run -d --name $container_name \
+        --rm \
+        ubuntu:20.04 \
+        bash -c "
+            apt-get update && apt-get install -y stress-ng;
+            stress-ng --vm 1 --vm-bytes 256M --timeout 300s --metrics-brief
+        "
 }
 
-# Menú principal
-case "$1" in
-    "start")
-        cleanup_containers
-        create_stress_containers
-        show_containers_status
-        echo ""
-        echo "Contenedores de stress creados. Usa '$0 monitor' para ver el impacto."
-        ;;
-    "stop")
-        cleanup_containers
-        echo "✓ Todos los contenedores de stress eliminados"
-        ;;
-    "status")
-        show_containers_status
-        ;;
-    "monitor")
-        monitor_resources
-        ;;
-    *)
-        echo "Uso: $0 {start|stop|status|monitor}"
-        echo ""
-        echo "Comandos:"
-        echo "  start   - Crear 10 contenedores de stress"
-        echo "  stop    - Eliminar todos los contenedores de stress"
-        echo "  status  - Mostrar estado de contenedores"
-        echo "  monitor - Monitorear recursos en tiempo real"
-        exit 1
-        ;;
-esac
+# Crear 5 contenedores de estrés de CPU
+echo "🔥 Creando contenedores de estrés de CPU..."
+for i in {1..5}; do
+    create_cpu_stress $i
+    sleep 2
+done
+
+# Crear 5 contenedores de estrés de RAM
+echo "💾 Creando contenedores de estrés de RAM..."
+for i in {1..5}; do
+    create_ram_stress $i
+    sleep 2
+done
+
+echo "✅ Se han creado 10 contenedores de estrés"
+echo "📊 Para ver los contenedores ejecutándose:"
+echo "   docker ps --filter name=stress-"
+echo "⏱️ Los contenedores se ejecutarán por 5 minutos"
+echo "🧹 Para limpiar manualmente: docker stop \$(docker ps -q --filter name=stress-)"

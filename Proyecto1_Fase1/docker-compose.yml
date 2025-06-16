@@ -1,0 +1,81 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # Base de datos MySQL
+  db:
+    image: mysql:8.0
+    container_name: monitor_db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: monitor_db
+      MYSQL_USER: monitor_user
+      MYSQL_PASSWORD: monitor_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./bd/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - monitor-network
+    restart: unless-stopped
+
+  # API NodeJS
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: monitor_api
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=monitor_db
+      - DB_USER=monitor_user
+      - DB_PASSWORD=monitor_pass
+      - AGENTE_URL=http://agente:8080
+    depends_on:
+      - db
+    networks:
+      - monitor-network
+    restart: unless-stopped
+
+  # Agente de monitoreo Go
+  agente:
+    build:
+      context: ./agente
+      dockerfile: Dockerfile
+    container_name: monitor_agente
+    ports:
+      - "8080:8080"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    privileged: true
+    networks:
+      - monitor-network
+    restart: unless-stopped
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: monitor_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    networks:
+      - monitor-network
+    restart: unless-stopped
+
+volumes:
+  db_data:
+    driver: local
+
+networks:
+  monitor-network:
+    driver: bridge
