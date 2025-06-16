@@ -14,7 +14,7 @@
     "nodejs",
     "mysql"
   ],
-  "author": "Tu Nombre",
+  "author": "202010040 - Evelio Cruz",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",

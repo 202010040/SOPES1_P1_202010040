@@ -5,7 +5,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = 3001;
 
 // Middleware
 app.use(cors());
@@ -14,10 +14,10 @@ app.use(express.json());
 
 // Configuración de la base de datos
 const dbConfig = {
-  host: process.env.DB_HOST || 'mysql-db',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'password123',
-  database: process.env.DB_NAME || 'monitoring_db',
+  host: 'localhost', 
+  user: 'user_monitoreo',
+  password: 'Ingenieria2025.',
+  database: 'sistema_monitoreo',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
@@ -30,8 +30,6 @@ async function initDatabase() {
   try {
     pool = mysql.createPool(dbConfig);
     
-    // Crear tablas si no existen
-    await createTables();
     console.log('Base de datos inicializada correctamente');
   } catch (error) {
     console.error('Error al inicializar la base de datos:', error);
@@ -39,61 +37,45 @@ async function initDatabase() {
   }
 }
 
-// Crear tablas
-async function createTables() {
-  const createRamTable = `
-    CREATE TABLE IF NOT EXISTS ram_metrics (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      total_memory BIGINT NOT NULL,
-      free_memory BIGINT NOT NULL,
-      used_memory BIGINT NOT NULL,
-      percentage_used DECIMAL(5,2) NOT NULL,
-      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_timestamp (timestamp)
-    )
-  `;
-
-  const createCpuTable = `
-    CREATE TABLE IF NOT EXISTS cpu_metrics (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      cpu_percentage DECIMAL(5,2) NOT NULL,
-      processes INT NOT NULL,
-      running INT NOT NULL,
-      sleeping INT NOT NULL,
-      zombie INT NOT NULL,
-      stopped INT NOT NULL,
-      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_timestamp (timestamp)
-    )
-  `;
-
-  await pool.execute(createRamTable);
-  await pool.execute(createCpuTable);
-}
-
-// RUTAS DE ESCRITURA (para el agente de monitoreo)
-
 // Insertar métricas de RAM
 app.post('/api/ram', async (req, res) => {
   try {
-    const { total_memory, free_memory, used_memory, percentage_used } = req.body;
-    
-    if (!total_memory || !free_memory || !used_memory || percentage_used === undefined) {
+
+    const data = req.body.data;
+
+    // Mapear claves estandar a las de base de datos
+    const mappedData = {
+      memoria_total: data.total,
+      memoria_libre: data.libre,
+      memoria_usada: data.uso,
+      porcentaje_uso: data.porcentaje
+    };
+
+    const { memoria_total, memoria_libre, memoria_usada, porcentaje_uso } = mappedData;
+
+    if (!memoria_total || !memoria_libre || !memoria_usada || porcentaje_uso === undefined) {
+      console.log('Faltan campos requeridos:', {
+        memoria_total, 
+        memoria_libre, 
+        memoria_usada, 
+        porcentaje_uso
+      });
+      // Respuesta de error si faltan campos
       return res.status(400).json({ 
-        error: 'Faltan campos requeridos: total_memory, free_memory, used_memory, percentage_used' 
+        error: 'Faltan campos requeridos: memoria_total, memoria_libre, memoria_usada, porcentaje_uso' 
       });
     }
 
     const query = `
-      INSERT INTO ram_metrics (total_memory, free_memory, used_memory, percentage_used)
+      INSERT INTO tabla_ram (memoria_total, memoria_libre, memoria_usada, porcentaje_uso)
       VALUES (?, ?, ?, ?)
     `;
     
     const [result] = await pool.execute(query, [
-      total_memory, 
-      free_memory, 
-      used_memory, 
-      percentage_used
+      memoria_total, 
+      memoria_libre, 
+      memoria_usada, 
+      porcentaje_uso
     ]);
     
     res.status(201).json({ 
@@ -105,31 +87,30 @@ app.post('/api/ram', async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
-
+ 
 // Insertar métricas de CPU
 app.post('/api/cpu', async (req, res) => {
-  try {
-    const { cpu_percentage, processes, running, sleeping, zombie, stopped } = req.body;
+  try { 
+    const data = req.body.data;
+    // Mapear claves estandar a las de base de datos
+    const mappedData = {
+      porcentaje_cpu: data.porcentajeUso,
+    };
+    const { porcentaje_cpu } = mappedData;
     
-    if (cpu_percentage === undefined || !processes || running === undefined || 
-        sleeping === undefined || zombie === undefined || stopped === undefined) {
+    if (porcentaje_cpu === undefined) {
       return res.status(400).json({ 
-        error: 'Faltan campos requeridos: cpu_percentage, processes, running, sleeping, zombie, stopped' 
+        error: 'Faltan campos requeridos: porcentaje_cpu' 
       });
     }
 
     const query = `
-      INSERT INTO cpu_metrics (cpu_percentage, processes, running, sleeping, zombie, stopped)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO tabla_cpu (porcentaje_cpu)
+      VALUES (?)
     `;
     
     const [result] = await pool.execute(query, [
-      cpu_percentage, 
-      processes, 
-      running, 
-      sleeping, 
-      zombie, 
-      stopped
+      porcentaje_cpu
     ]);
     
     res.status(201).json({ 
@@ -142,50 +123,13 @@ app.post('/api/cpu', async (req, res) => {
   }
 });
 
-// RUTAS DE LECTURA (para el frontend)
-
-// Obtener métricas recientes de RAM
-app.get('/api/ram/recent', async (req, res) => {
-  try {
-    const limit = req.query.limit || 50;
-    const query = `
-      SELECT * FROM ram_metrics 
-      ORDER BY timestamp DESC 
-      LIMIT ?
-    `;
-    
-    const [rows] = await pool.execute(query, [parseInt(limit)]);
-    res.json(rows);
-  } catch (error) {
-    console.error('Error al obtener métricas de RAM:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
-
-// Obtener métricas recientes de CPU
-app.get('/api/cpu/recent', async (req, res) => {
-  try {
-    const limit = req.query.limit || 50;
-    const query = `
-      SELECT * FROM cpu_metrics 
-      ORDER BY timestamp DESC 
-      LIMIT ?
-    `;
-    
-    const [rows] = await pool.execute(query, [parseInt(limit)]);
-    res.json(rows);
-  } catch (error) {
-    console.error('Error al obtener métricas de CPU:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
 
 // Obtener última métrica de RAM
 app.get('/api/ram/latest', async (req, res) => {
   try {
     const query = `
-      SELECT * FROM ram_metrics 
-      ORDER BY timestamp DESC 
+      SELECT * FROM tabla_ram 
+      ORDER BY fecha DESC 
       LIMIT 1
     `;
     
@@ -201,8 +145,8 @@ app.get('/api/ram/latest', async (req, res) => {
 app.get('/api/cpu/latest', async (req, res) => {
   try {
     const query = `
-      SELECT * FROM cpu_metrics 
-      ORDER BY timestamp DESC 
+      SELECT * FROM tabla_cpu 
+      ORDER BY fecha DESC 
       LIMIT 1
     `;
     
@@ -214,64 +158,6 @@ app.get('/api/cpu/latest', async (req, res) => {
   }
 });
 
-// Obtener métricas por rango de tiempo
-app.get('/api/ram/range', async (req, res) => {
-  try {
-    const { start, end } = req.query;
-    
-    if (!start || !end) {
-      return res.status(400).json({ 
-        error: 'Se requieren parámetros start y end (formato: YYYY-MM-DD HH:MM:SS)' 
-      });
-    }
-
-    const query = `
-      SELECT * FROM ram_metrics 
-      WHERE timestamp BETWEEN ? AND ?
-      ORDER BY timestamp ASC
-    `;
-    
-    const [rows] = await pool.execute(query, [start, end]);
-    res.json(rows);
-  } catch (error) {
-    console.error('Error al obtener métricas de RAM por rango:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
-
-app.get('/api/cpu/range', async (req, res) => {
-  try {
-    const { start, end } = req.query;
-    
-    if (!start || !end) {
-      return res.status(400).json({ 
-        error: 'Se requieren parámetros start y end (formato: YYYY-MM-DD HH:MM:SS)' 
-      });
-    }
-
-    const query = `
-      SELECT * FROM cpu_metrics 
-      WHERE timestamp BETWEEN ? AND ?
-      ORDER BY timestamp ASC
-    `;
-    
-    const [rows] = await pool.execute(query, [start, end]);
-    res.json(rows);
-  } catch (error) {
-    console.error('Error al obtener métricas de CPU por rango:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
-
-// Ruta de salud
-app.get('/health', async (req, res) => {
-  try {
-    await pool.execute('SELECT 1');
-    res.json({ status: 'OK', database: 'Connected' });
-  } catch (error) {
-    res.status(500).json({ status: 'ERROR', database: 'Disconnected' });
-  }
-});
 
 // Ruta raíz
 app.get('/', (req, res) => {
@@ -280,13 +166,8 @@ app.get('/', (req, res) => {
     endpoints: [
       'POST /api/ram - Insertar métricas de RAM',
       'POST /api/cpu - Insertar métricas de CPU',
-      'GET /api/ram/recent?limit=N - Obtener métricas recientes de RAM',
-      'GET /api/cpu/recent?limit=N - Obtener métricas recientes de CPU',
       'GET /api/ram/latest - Obtener última métrica de RAM',
       'GET /api/cpu/latest - Obtener última métrica de CPU',
-      'GET /api/ram/range?start=...&end=... - Obtener métricas de RAM por rango',
-      'GET /api/cpu/range?start=...&end=... - Obtener métricas de CPU por rango',
-      'GET /health - Estado del servicio'
     ]
   });
 });

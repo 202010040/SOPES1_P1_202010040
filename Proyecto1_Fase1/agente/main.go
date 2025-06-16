@@ -31,16 +31,16 @@ type SystemMetrics struct {
 
 // Canales para comunicación entre goroutines
 type Channels struct {
-	RAMChan     chan RAMInfo
-	CPUChan     chan CPUInfo
-	ErrorChan   chan error
-	StopChan    chan bool
-	MetricsChan chan SystemMetrics
+	RAMChan   chan RAMInfo
+	CPUChan   chan CPUInfo
+	ErrorChan chan error
+	StopChan  chan bool
 }
 
 // Configuración del agente
 type Config struct {
-	APIEndpoint     string
+	RAMAPIEndpoint  string
+	CPUAPIEndpoint  string
 	MonitorInterval time.Duration
 	RAMProcFile     string
 	CPUProcFile     string
@@ -49,17 +49,19 @@ type Config struct {
 
 // Agente de monitoreo principal
 type MonitoringAgent struct {
-	config   Config
-	channels Channels
-	wg       sync.WaitGroup
-	client   *APIClient
+	config    Config
+	channels  Channels
+	wg        sync.WaitGroup
+	ramClient *APIClient
+	cpuClient *APIClient
 }
 
 func main() {
 	// Configuración del agente
 	config := Config{
-		APIEndpoint:     getEnv("API_ENDPOINT", "http://api:3000/metrics"),
-		MonitorInterval: getDurationEnv("MONITOR_INTERVAL", 5*time.Second),
+		RAMAPIEndpoint:  "http://localhost:3001/api/ram",
+		CPUAPIEndpoint:  "http://localhost:3001/api/cpu",
+		MonitorInterval: 5 * time.Second,
 		RAMProcFile:     "/proc/ram_202010040",
 		CPUProcFile:     "/proc/cpu_202010040",
 		MaxRetries:      3,
@@ -67,26 +69,28 @@ func main() {
 
 	// Inicializar canales
 	channels := Channels{
-		RAMChan:     make(chan RAMInfo, 10),
-		CPUChan:     make(chan CPUInfo, 10),
-		ErrorChan:   make(chan error, 10),
-		StopChan:    make(chan bool, 5),
-		MetricsChan: make(chan SystemMetrics, 10),
+		RAMChan:   make(chan RAMInfo, 10),
+		CPUChan:   make(chan CPUInfo, 10),
+		ErrorChan: make(chan error, 10),
+		StopChan:  make(chan bool, 5),
 	}
 
-	// Crear cliente API
-	apiClient := NewAPIClient(config.APIEndpoint, config.MaxRetries)
+	// Crear clientes API separados
+	ramClient := NewAPIClient(config.RAMAPIEndpoint, config.MaxRetries)
+	cpuClient := NewAPIClient(config.CPUAPIEndpoint, config.MaxRetries)
 
 	// Crear agente de monitoreo
 	agent := &MonitoringAgent{
-		config:   config,
-		channels: channels,
-		client:   apiClient,
+		config:    config,
+		channels:  channels,
+		ramClient: ramClient,
+		cpuClient: cpuClient,
 	}
 
 	log.Println("🚀 Iniciando Agente de Monitoreo de Sistema")
 	log.Printf("📊 Intervalo de monitoreo: %v", config.MonitorInterval)
-	log.Printf("🔗 API Endpoint: %s", config.APIEndpoint)
+	log.Printf("🔗 RAM API Endpoint: %s", config.RAMAPIEndpoint)
+	log.Printf("🔗 CPU API Endpoint: %s", config.CPUAPIEndpoint)
 
 	// Iniciar agente
 	agent.Start()
@@ -115,13 +119,12 @@ func (ma *MonitoringAgent) Start() {
 	ma.wg.Add(1)
 	go ma.monitorCPU()
 
-	// Iniciar agregador de métricas
+	// Iniciar enviadores de datos a API (separados)
 	ma.wg.Add(1)
-	go ma.aggregateMetrics()
+	go ma.sendRAMToAPI()
 
-	// Iniciar enviador de datos a API
 	ma.wg.Add(1)
-	go ma.sendToAPI()
+	go ma.sendCPUToAPI()
 
 	// Iniciar manejador de errores
 	ma.wg.Add(1)
@@ -149,7 +152,6 @@ func (ma *MonitoringAgent) Stop() {
 	close(ma.channels.RAMChan)
 	close(ma.channels.CPUChan)
 	close(ma.channels.ErrorChan)
-	close(ma.channels.MetricsChan)
 	close(ma.channels.StopChan)
 
 	log.Println("✅ Todas las goroutines detenidas")
@@ -218,82 +220,49 @@ func (ma *MonitoringAgent) monitorCPU() {
 	}
 }
 
-// Goroutine para agregar métricas de RAM y CPU
-func (ma *MonitoringAgent) aggregateMetrics() {
+// Goroutine para enviar datos de RAM a la API
+func (ma *MonitoringAgent) sendRAMToAPI() {
 	defer ma.wg.Done()
 
-	var currentRAM RAMInfo
-	var currentCPU CPUInfo
-	var hasRAM, hasCPU bool
-
-	log.Println("🔄 Iniciando agregador de métricas")
+	log.Println("🌐 Iniciando enviador de datos de RAM a API")
 
 	for {
 		select {
 		case ramInfo := <-ma.channels.RAMChan:
-			currentRAM = ramInfo
-			hasRAM = true
-
-			// Si tenemos datos de ambos, enviar métricas combinadas
-			if hasCPU {
-				metrics := SystemMetrics{
-					RAM: currentRAM,
-					CPU: currentCPU,
-				}
-
-				select {
-				case ma.channels.MetricsChan <- metrics:
-					log.Println("📦 Métricas agregadas y enviadas")
-				default:
-					log.Println("⚠️ Canal de métricas lleno")
-				}
-			}
-
-		case cpuInfo := <-ma.channels.CPUChan:
-			currentCPU = cpuInfo
-			hasCPU = true
-
-			// Si tenemos datos de ambos, enviar métricas combinadas
-			if hasRAM {
-				metrics := SystemMetrics{
-					RAM: currentRAM,
-					CPU: currentCPU,
-				}
-
-				select {
-				case ma.channels.MetricsChan <- metrics:
-					log.Println("📦 Métricas agregadas y enviadas")
-				default:
-					log.Println("⚠️ Canal de métricas lleno")
-				}
+			err := ma.ramClient.SendRAMMetrics(ramInfo)
+			if err != nil {
+				ma.channels.ErrorChan <- fmt.Errorf("error enviando RAM a API: %v", err)
+			} else {
+				log.Printf("✅ Métricas de RAM enviadas a API: %d%% (%d/%d KB)",
+					ramInfo.Porcentaje, ramInfo.Uso, ramInfo.Total)
 			}
 
 		case <-ma.channels.StopChan:
-			log.Println("🛑 Deteniendo agregador de métricas")
+			log.Println("🛑 Deteniendo enviador de RAM API")
 			return
 		}
 	}
 }
 
-// Goroutine para enviar datos a la API
-func (ma *MonitoringAgent) sendToAPI() {
+// Goroutine para enviar datos de CPU a la API
+func (ma *MonitoringAgent) sendCPUToAPI() {
 	defer ma.wg.Done()
 
-	log.Println("🌐 Iniciando enviador de datos a API")
+	log.Println("🌐 Iniciando enviador de datos de CPU a API")
 
 	for {
 		select {
-		case metrics := <-ma.channels.MetricsChan:
-			err := ma.client.SendMetrics(metrics)
+		case cpuInfo := <-ma.channels.CPUChan:
+			err := ma.cpuClient.SendCPUMetrics(cpuInfo)
 			if err != nil {
-				ma.channels.ErrorChan <- fmt.Errorf("error enviando a API: %v", err)
+				ma.channels.ErrorChan <- fmt.Errorf("error enviando CPU a API: %v", err)
 			} else {
-				log.Printf("✅ Métricas enviadas a API: RAM %d%%, CPU %d%%",
-					metrics.RAM.Porcentaje, metrics.CPU.PorcentajeUso)
+				log.Printf("✅ Métricas de CPU enviadas a API: %d%% uso",
+					cpuInfo.PorcentajeUso)
 			}
 
 		case <-ma.channels.StopChan:
-			log.Println("🛑 Deteniendo enviador de API")
+			log.Println("🛑 Deteniendo enviador de CPU API")
 			return
 		}
 	}
@@ -317,21 +286,4 @@ func (ma *MonitoringAgent) handleErrors() {
 			return
 		}
 	}
-}
-
-// Funciones auxiliares para variables de entorno
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func getDurationEnv(key string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
-	}
-	return defaultValue
 }
