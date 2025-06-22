@@ -1,1 +1,0 @@
-savedcmd_/home/evelio/Documentos/SOPES1_1S2025/SOPES1_P1_202010040/Proyecto1_Fase1/kernel/cpu_202010040.mod := printf '%s\n'   cpu_202010040.o | awk '!x[$$0]++ { print("/home/evelio/Documentos/SOPES1_1S2025/SOPES1_P1_202010040/Proyecto1_Fase1/kernel/"$$0) }' > /home/evelio/Documentos/SOPES1_1S2025/SOPES1_P1_202010040/Proyecto1_Fase1/kernel/cpu_202010040.mod

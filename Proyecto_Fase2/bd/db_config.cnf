@@ -1,0 +1,16 @@
+[mysqld]
+bind-address = 0.0.0.0
+port = 3306
+datadir = /var/lib/mysql
+innodb_buffer_pool_size = 256M
+innodb_log_file_size = 64M
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+default-time-zone = '-06:00'
+general_log = 1
+general_log_file = /var/log/mysql/general.log
+log_error = /var/log/mysql/error.log
+max_connections = 100
+connect_timeout = 10
+wait_timeout = 600
+max_allowed_packet = 16M

@@ -1,1 +1,0 @@
-savedcmd_/home/evelio/Documentos/SOPES1_1S2025/SOPES1_P1_202010040/Proyecto1_Fase1/kernel/Module.symvers :=  scripts/mod/modpost -M -m -a      -o /home/evelio/Documentos/SOPES1_1S2025/SOPES1_P1_202010040/Proyecto1_Fase1/kernel/Module.symvers -T /home/evelio/Documentos/SOPES1_1S2025/SOPES1_P1_202010040/Proyecto1_Fase1/kernel/modules.order -i Module.symvers -e 
