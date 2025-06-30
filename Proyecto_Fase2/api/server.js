@@ -11,8 +11,7 @@ app.use(cors({
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000'
 }));
 
-
-const PORT = 3001;
+const PORT = 4001;
 
 // Middleware
 app.use(cors());
@@ -21,7 +20,7 @@ app.use(express.json());
 
 // Configuración de la base de datos usando variables de entorno
 const dbConfig = {
-  host: process.env.DB_HOST || 'monitor_db', // Nombre del servicio de DB en docker-compose
+  host: process.env.DB_HOST || '0.0.0.0', // 'db-monitoreo', // Nombre del contenedor MySQL
   port: process.env.DB_PORT || 3306,
   user: process.env.DB_USER || 'user_monitoreo',
   password: process.env.DB_PASSWORD || 'Ingenieria2025.',
@@ -63,121 +62,87 @@ async function initDatabase() {
   }
 }
 
-// Insertar métricas de RAM
-app.post('/api/ram', async (req, res) => {
+// Insertar métricas del sistema
+app.post('/api/metrics', async (req, res) => {
   try {
-    const data = req.body.data;
+    const {
+      total_ram,
+      ram_libre,
+      uso_ram,
+      porcentaje_ram,
+      porcentaje_cpu_uso,
+      porcentaje_cpu_libre,
+      procesos_corriendo,
+      total_procesos,
+      procesos_durmiendo,
+      procesos_zombie,
+      procesos_parados,
+      hora
+    } = req.body;
 
-    // Mapear claves estandar a las de base de datos
-    const mappedData = {
-      memoria_total: data.total,
-      memoria_libre: data.libre,
-      memoria_usada: data.uso,
-      porcentaje_uso: data.porcentaje
-    };
 
-    const { memoria_total, memoria_libre, memoria_usada, porcentaje_uso } = mappedData;
+    // Validar campos requeridos
+    if (
+      total_ram === undefined ||
+      ram_libre === undefined ||
+      uso_ram === undefined ||
+      porcentaje_ram === undefined || 
+      porcentaje_cpu_uso === undefined || 
+      porcentaje_cpu_libre === undefined ||
+      procesos_corriendo === undefined ||
+      total_procesos === undefined ||
+      procesos_durmiendo === undefined ||
+      procesos_zombie === undefined ||
+      procesos_parados === undefined ||
+      hora === undefined
+    ) {
+      console.log('Faltan campos requeridos en la petición:', req.body);
+      return res.status(400).json({ 
+        error: 'Faltan campos requeridos en el JSON' 
+      });
+    }
 
-    if (!memoria_total || !memoria_libre || !memoria_usada || porcentaje_uso === undefined) {
-      console.log('Faltan campos requeridos:', {
+
+    const query = `
+      INSERT INTO metricas_sistema (
         memoria_total, 
         memoria_libre, 
         memoria_usada, 
-        porcentaje_uso
-      });
-      // Respuesta de error si faltan campos
-      return res.status(400).json({ 
-        error: 'Faltan campos requeridos: memoria_total, memoria_libre, memoria_usada, porcentaje_uso' 
-      });
-    }
-
-    const query = `
-      INSERT INTO tabla_ram (memoria_total, memoria_libre, memoria_usada, porcentaje_uso)
-      VALUES (?, ?, ?, ?)
+        porcentaje_ram,
+        porcentaje_cpu_uso,
+        porcentaje_cpu_libre,
+        procesos_corriendo,
+        total_procesos,
+        procesos_durmiendo,
+        procesos_zombie,
+        procesos_parados,
+        hora,
+        api
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
     const [result] = await pool.execute(query, [
-      memoria_total, 
-      memoria_libre, 
-      memoria_usada, 
-      porcentaje_uso
+      total_ram,
+      ram_libre,
+      uso_ram,
+      porcentaje_ram,
+      porcentaje_cpu_uso,
+      porcentaje_cpu_libre,
+      procesos_corriendo,
+      total_procesos,
+      procesos_durmiendo,
+      procesos_zombie,
+      procesos_parados,
+      hora,
+      'NodeJS'
     ]);
     
     res.status(201).json({ 
-      message: 'Métricas de RAM guardadas exitosamente',
+      message: 'Métricas del sistema guardadas exitosamente',
       id: result.insertId 
     });
   } catch (error) {
-    console.error('Error al guardar métricas de RAM:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
- 
-// Insertar métricas de CPU
-app.post('/api/cpu', async (req, res) => {
-  try { 
-    const data = req.body.data;
-    // Mapear claves estandar a las de base de datos
-    const mappedData = {
-      porcentaje_cpu: data.porcentajeUso,
-    };
-    const { porcentaje_cpu } = mappedData;
-    
-    if (porcentaje_cpu === undefined) {
-      return res.status(400).json({ 
-        error: 'Faltan campos requeridos: porcentaje_cpu' 
-      });
-    }
-
-    const query = `
-      INSERT INTO tabla_cpu (porcentaje_cpu)
-      VALUES (?)
-    `;
-    
-    const [result] = await pool.execute(query, [
-      porcentaje_cpu
-    ]);
-    
-    res.status(201).json({ 
-      message: 'Métricas de CPU guardadas exitosamente',
-      id: result.insertId 
-    });
-  } catch (error) {
-    console.error('Error al guardar métricas de CPU:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
-
-// Obtener última métrica de RAM
-app.get('/api/ram/latest', async (req, res) => {
-  try {
-    const query = `
-      SELECT * FROM tabla_ram 
-      ORDER BY fecha DESC 
-      LIMIT 1
-    `;
-    
-    const [rows] = await pool.execute(query);
-    res.json(rows[0] || null);
-  } catch (error) {
-    console.error('Error al obtener última métrica de RAM:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
-  }
-});
-
-// Obtener última métrica de CPU
-app.get('/api/cpu/latest', async (req, res) => {
-  try {
-    const query = `
-      SELECT * FROM tabla_cpu 
-      ORDER BY fecha DESC 
-      LIMIT 1
-    `;
-    
-    const [rows] = await pool.execute(query);
-    res.json(rows[0] || null);
-  } catch (error) {
-    console.error('Error al obtener última métrica de CPU:', error);
+    console.error('Error al guardar métricas del sistema:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
@@ -187,10 +152,7 @@ app.get('/', (req, res) => {
   res.json({ 
     message: 'API de Monitoreo de Servicios Linux',
     endpoints: [
-      'POST /api/ram - Insertar métricas de RAM',
-      'POST /api/cpu - Insertar métricas de CPU',
-      'GET /api/ram/latest - Obtener última métrica de RAM',
-      'GET /api/cpu/latest - Obtener última métrica de CPU',
+      'POST /api/metrics - Insertar métricas del sistema'
     ]
   });
 });

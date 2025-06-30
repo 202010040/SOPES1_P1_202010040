@@ -21,6 +21,7 @@ static void get_process_stats(unsigned long *running, unsigned long *total,
                              unsigned long *stopped)
 {
     struct task_struct *task;
+    unsigned int state;
     
     *running = 0;
     *total = 0;
@@ -32,7 +33,10 @@ static void get_process_stats(unsigned long *running, unsigned long *total,
     for_each_process(task) {
         (*total)++;
         
-        switch (task->state) {
+        // Usar __state para kernels más recientes
+        state = READ_ONCE(task->__state);
+        
+        switch (state) {
             case TASK_RUNNING:
                 (*running)++;
                 break;

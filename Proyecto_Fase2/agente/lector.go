@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"time"
 )
 
 // Leer información de RAM desde el módulo del kernel
@@ -19,9 +18,6 @@ func (ma *MonitoringAgent) readRAMInfo() (RAMInfo, error) {
 	if err != nil {
 		return RAMInfo{}, fmt.Errorf("error parsing JSON de RAM: %v", err)
 	}
-
-	// Agregar timestamp
-	ramInfo.Timestamp = time.Now().Unix()
 
 	return ramInfo, nil
 }
@@ -39,10 +35,26 @@ func (ma *MonitoringAgent) readCPUInfo() (CPUInfo, error) {
 		return CPUInfo{}, fmt.Errorf("error parsing JSON de CPU: %v", err)
 	}
 
-	// Agregar timestamp
-	cpuInfo.Timestamp = time.Now().Unix()
+	// Calcular el porcentaje libre (no viene del módulo del kernel)
+	cpuInfo.PorcentajeLibre = 100 - cpuInfo.PorcentajeUso
 
 	return cpuInfo, nil
+}
+
+// Leer información de Procesos desde el módulo del kernel
+func (ma *MonitoringAgent) readProcesosInfo() (ProcesosInfo, error) {
+	data, err := ioutil.ReadFile(ma.config.ProcesosProcFile)
+	if err != nil {
+		return ProcesosInfo{}, fmt.Errorf("no se pudo leer %s: %v", ma.config.ProcesosProcFile, err)
+	}
+
+	var procesosInfo ProcesosInfo
+	err = json.Unmarshal(data, &procesosInfo)
+	if err != nil {
+		return ProcesosInfo{}, fmt.Errorf("error parsing JSON de Procesos: %v", err)
+	}
+
+	return procesosInfo, nil
 }
 
 // Función de utilidad para verificar si los archivos /proc existen
@@ -59,6 +71,12 @@ func (ma *MonitoringAgent) CheckProcFiles() error {
 			ma.config.CPUProcFile, err)
 	}
 
+	// Verificar archivo de Procesos
+	if _, err := ioutil.ReadFile(ma.config.ProcesosProcFile); err != nil {
+		return fmt.Errorf("archivo Procesos no disponible (%s): %v. ¿Está el módulo del kernel cargado?",
+			ma.config.ProcesosProcFile, err)
+	}
+
 	return nil
 }
 
@@ -71,7 +89,8 @@ func (ma *MonitoringAgent) TestReading() {
 	if err != nil {
 		fmt.Printf("❌ Error leyendo RAM: %v\n", err)
 	} else {
-		fmt.Printf("✅ RAM OK: %+v\n", ramInfo)
+		fmt.Printf("✅ RAM OK: Total=%d, Libre=%d, Uso=%d, Porcentaje=%d%%\n",
+			ramInfo.Total, ramInfo.Libre, ramInfo.Uso, ramInfo.Porcentaje)
 	}
 
 	// Probar CPU
@@ -79,6 +98,18 @@ func (ma *MonitoringAgent) TestReading() {
 	if err != nil {
 		fmt.Printf("❌ Error leyendo CPU: %v\n", err)
 	} else {
-		fmt.Printf("✅ CPU OK: %+v\n", cpuInfo)
+		fmt.Printf("✅ CPU OK: Uso=%d%%, Libre=%d%%\n",
+			cpuInfo.PorcentajeUso, cpuInfo.PorcentajeLibre)
+	}
+
+	// Probar Procesos
+	procesosInfo, err := ma.readProcesosInfo()
+	if err != nil {
+		fmt.Printf("❌ Error leyendo Procesos: %v\n", err)
+	} else {
+		fmt.Printf("✅ Procesos OK: Corriendo=%d, Total=%d, Durmiendo=%d, Zombie=%d, Parados=%d\n",
+			procesosInfo.ProcesosCorriendo, procesosInfo.TotalProcesos,
+			procesosInfo.ProcesosDurmiendo, procesosInfo.ProcesosZombie,
+			procesosInfo.ProcesosParados)
 	}
 }

@@ -32,7 +32,7 @@ func NewAPIClient(baseURL string, maxRetries int) *APIClient {
 	}
 }
 
-// Enviar métricas a la API con reintentos
+// Enviar métricas combinadas a la API con reintentos
 func (c *APIClient) SendMetrics(metrics SystemMetrics) error {
 	jsonData, err := json.Marshal(metrics)
 	if err != nil {
@@ -66,7 +66,7 @@ func (c *APIClient) sendRequest(jsonData []byte) error {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "MonitoringAgent/1.0")
+	req.Header.Set("User-Agent", "MonitoringAgent/2.0")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -103,7 +103,7 @@ func (c *APIClient) HealthCheck() error {
 	return nil
 }
 
-// Enviar métricas individuales (alternativa)
+// Enviar métricas individuales (métodos de compatibilidad)
 func (c *APIClient) SendRAMMetrics(ram RAMInfo) error {
 	jsonData, err := json.Marshal(map[string]interface{}{
 		"type": "ram",
@@ -123,6 +123,18 @@ func (c *APIClient) SendCPUMetrics(cpu CPUInfo) error {
 	})
 	if err != nil {
 		return fmt.Errorf("error serializando CPU: %v", err)
+	}
+
+	return c.sendRequest(jsonData)
+}
+
+func (c *APIClient) SendProcesosMetrics(procesos ProcesosInfo) error {
+	jsonData, err := json.Marshal(map[string]interface{}{
+		"type": "procesos",
+		"data": procesos,
+	})
+	if err != nil {
+		return fmt.Errorf("error serializando Procesos: %v", err)
 	}
 
 	return c.sendRequest(jsonData)
