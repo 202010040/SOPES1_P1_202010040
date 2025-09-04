@@ -1,0 +1,36 @@
+# Archivos de Git
+.git
+.gitignore
+
+# Documentación
+README.md
+*.md
+
+# Archivos temporales
+*.tmp
+*.temp
+
+# Logs
+*.log
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archivos de Docker
+Dockerfile*
+.dockerignore
+
+# Archivos binarios (se construyen dentro del contenedor)
+main
+agente-monitoreo
+
+# Archivos de configuración local
+.env
+.env.local

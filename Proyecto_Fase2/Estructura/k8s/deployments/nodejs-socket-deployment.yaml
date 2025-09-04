@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-socket
+  namespace: so1-fase2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nodejs-socket
+  template:
+    metadata:
+      labels:
+        app: nodejs-socket
+    spec:
+      containers:
+      - name: nodejs-socket
+        image: marcoscruz2001/nodejs-socket:latest
+        ports:
+        - containerPort: 4000
+        env:
+        - name: DB_HOST
+          value: "TU_CLOUD_SQL_IP"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-socket-service
+  namespace: so1-fase2
+spec:
+  selector:
+    app: nodejs-socket
+  ports:
+  - port: 80
+    targetPort: 4000
+  type: ClusterIP

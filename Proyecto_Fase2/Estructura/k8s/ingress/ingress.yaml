@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: main-ingress
+  namespace: so1-fase2
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "50"
+spec:
+  rules:
+  - host: tu-dominio.com
+    http:
+      paths:
+      - path: /api/python
+        pathType: Prefix
+        backend:
+          service:
+            name: python-api-service
+            port:
+              number: 80
+      - path: /api/nodejs
+        pathType: Prefix
+        backend:
+          service:
+            name: nodejs-api-service
+            port:
+              number: 80
+      - path: /socket
+        pathType: Prefix
+        backend:
+          service:
+            name: nodejs-socket-service
+            port:
+              number: 80

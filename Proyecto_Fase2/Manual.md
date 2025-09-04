@@ -1,7 +1,7 @@
 ### Universidad de San Carlos de Guatemala
-### Facultad de Ingenieria
-### Ingenieria en Ciencias y Sistemas
-### Sistemas operativos 1
+### Facultad de Ingeniería
+### Escuela de Ciencias y Sistemas
+### Sistemas Operativos 1
 
 ---
 
@@ -9,311 +9,709 @@
     <img src="manual/fiusac-logo.png" alt="Portada" width="300px" height="300px">
 </div>
 
-# Manual Técnico Proyecto 1
- 
+# Manual Técnico Proyecto Fase 2
+## Monitoreo Cloud de VMs
+
 ## Descripción del Proyecto
 
-El objetivo de este proyecto es aplicar todos los conocimientos adquiridos en la unidad 1, con la implementación de un gestor de contenedores mediante el uso de scripts, módulos de kernel, lenguajes de programación y la herramienta para la creación y manejo de contenedores más popular, Docker. Con la ayuda de este gestor de contenedores se podrá observar de manera más detallada los recursos y la representación de los contenedores a nivel de procesos de Linux y como de manera flexible pueden ser creados, destruidos y conectados por otros servicios.
+Este proyecto implementa un sistema completo de monitoreo en la nube para máquinas virtuales, utilizando tecnologías de contenedorización, orquestación con Kubernetes, servicios en la nube y pruebas de carga. El sistema evalúa la capacidad de una VM para soportar cargas de trabajo específicas mediante la generación de tráfico controlado y el análisis de métricas en tiempo real.
+
+## Objetivos
+
+- Desplegar un clúster de Kubernetes para gestionar y escalar servicios de monitoreo
+- Implementar enfoque Serverless con Cloud Run para aplicaciones ligeras
+- Utilizar Cloud SQL para almacenamiento seguro y escalable de métricas
+- Configurar balanceadores de carga para distribución eficiente del tráfico
+- Desarrollar una aplicación web interactiva para visualización de estadísticas
 
 ## Arquitectura del Sistema
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │    API NodeJS   │    │  Base de Datos  │
-│   (React)       │◄──►│   (Puerto 3001) │◄──►│    (MySQL)      │
-│  (Puerto 3000)  │    │                 │    │  (Puerto 3306)  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         ▲                       ▲
-         │                       │
-         └───────────────────────┼─────────────────────────┘
-                                 ▼
-                    ┌─────────────────┐
-                    │ Agente Go       │
-                    │ (Puerto 8080)   │
-                    └─────────────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │ Módulos Kernel  │
-                    │ - ram_202010040 │
-                    │ - cpu_202010040 │
-                    └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                                KUBERNETES CLUSTER                               │
+│                                                                                 │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐            │
+│  │    INGRESS      │    │  TRAFFIC SPLIT  │    │  LOAD BALANCER  │            │
+│  │                 │◄──►│   (50%/50%)     │◄──►│                 │            │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘            │
+│           │                       │                       │                    │
+│           ▼                       ▼                       ▼                    │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐            │
+│  │  API Python     │    │   API NodeJS    │    │ WebSocket API   │            │
+│  │   (Ruta 1)      │    │   (Ruta 2)      │    │   (NodeJS)      │            │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘            │
+│           │                       │                       │                    │
+│           └───────────────────────┼───────────────────────┘                    │
+│                                   ▼                                            │
+│                          ┌─────────────────┐                                   │
+│                          │   CLOUD SQL     │                                   │
+│                          │    (MySQL)      │                                   │
+│                          └─────────────────┘                                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                   ▲
+                                   │
+                          ┌─────────────────┐
+                          │   CLOUD RUN     │
+                          │  Frontend React │
+                          │   (Dashboard)   │
+                          └─────────────────┘
+                                   ▲
+                                   │ (WebSocket)
+                          ┌─────────────────┐
+                          │     LOCUST      │
+                          │ Traffic Gen.    │
+                          │   (Local)       │
+                          └─────────────────┘
+                                   ▲
+                                   │
+                          ┌─────────────────┐
+                          │  VM TARGET      │
+                          │ Agente Go +     │
+                          │ Kernel Modules  │
+                          │ + Stress Tests  │
+                          └─────────────────┘
 ```
 
 ## Tecnologías Utilizadas
 
+### Infraestructura
+- **Orquestación**: Kubernetes (GKE)
+- **Serverless**: Google Cloud Run
+- **Base de Datos**: Google Cloud SQL (MySQL)
+- **Balanceador**: Google Cloud Load Balancer
+- **Contenedores**: Docker + DockerHub
+
+### Desarrollo
 - **Módulos del Kernel**: C
-- **Agente de Monitoreo**: Go (Golang)
-- **API**: Node.js con Express
-- **Frontend**: React
-- **Base de Datos**: MySQL 8.0
-- **Containerización**: Docker & Docker Compose
-- **Scripts de Automatización**: Bash
+- **Agente de Monitoreo**: Go (Golang) - Dockerizado
+- **APIs**: Python (Ruta 1), Node.js (Ruta 2), Node.js + Socket.IO (WebSocket)
+- **Frontend**: React + Socket.IO Client
+- **Generador de Tráfico**: Locust (Python)
+- **Pruebas de Estrés**: Docker stress container
 
 ## Estructura del Proyecto
 
 ```
-Proyecto1_Fase1/
-├── agente/                 # Agente de monitoreo en Go
+Proyecto_Fase2/
+├── kubernetes/                 # Configuraciones K8s
+│   ├── namespace.yaml
+│   ├── ingress.yaml
+│   ├── traffic-split.yaml
+│   └── services/
+├── apis/
+│   ├── python-api/            # API Ruta 1 (Python)
+│   │   ├── Dockerfile
+│   │   └── app.py
+│   ├── nodejs-api/            # API Ruta 2 (NodeJS)
+│   │   ├── Dockerfile
+│   │   └── server.js
+│   └── websocket-api/         # API WebSocket (NodeJS)
+│       ├── Dockerfile
+│       └── socket-server.js
+├── agente/                    # Agente de monitoreo en Go
 │   ├── Dockerfile
 │   └── main.go
-├── api/                    # API en Node.js
+├── frontend/                  # Frontend React + Socket.IO
 │   ├── Dockerfile
 │   ├── package.json
 │   └── src/
-├── bd/                     # Scripts de base de datos
-│   └── init-db.sql
-├── bash/                   # Scripts de automatización
-│   ├── cleanup.sh
-│   ├── deploy_app.sh
-│   ├── install_modules.sh
-│   └── stress_containers.sh
-├── frontend/               # Frontend en React
-│   ├── Dockerfile
-│   ├── package.json
-│   └── src/
-├── kernel/                 # Módulos del kernel
+├── kernel/                    # Módulos del kernel
 │   ├── Makefile
-│   ├── cpu_202010040.c
-│   └── ram_202010040.c
-└── docker-compose.yml      # Configuración de servicios
+│   ├── cpu_<carnet>.c
+│   ├── ram_<carnet>.c
+│   └── procesos_<carnet>.c    # NUEVO: Módulo de procesos
+├── locust/                    # Generador de tráfico
+│   ├── traffic_generator.py
+│   └── config.py
+├── cloud-sql/                 # Scripts de base de datos
+│   └── init-db.sql
+└── scripts/                   # Scripts de automatización
+    ├── deploy-k8s.sh
+    ├── setup-gcp.sh
+    └── cleanup.sh
 ```
 
-## Prerrequisitos
+## Nuevas Funcionalidades - Fase 2
 
-- **Sistema Operativo**: Ubuntu 20.04 o 22.04
-- **Docker**: Versión 20.10 o superior
-- **Docker Compose**: Versión 2.0 o superior
-- **Herramientas de desarrollo del kernel**:
-  ```bash
-  sudo apt-get install build-essential linux-headers-$(uname -r) make gcc
-  ```
+### 1. Módulo de Procesos del Kernel
+**Archivo**: `procesos_<carnet>.c`
+
+Nuevo módulo que recolecta información sobre procesos del sistema:
+
+```json
+{
+  "procesos_corriendo": 123,
+  "total_procesos": 233,
+  "procesos_durmiendo": 65,
+  "procesos_zombie": 65,
+  "procesos_parados": 65
+}
+```
+
+**Compilación e instalación**:
+```bash
+cd kernel
+make
+sudo insmod procesos_<carnet>.ko
+cat /proc/procesos_<carnet>
+```
+
+### 2. Generador de Tráfico con Locust
+
+**Configuración**: `locust/traffic_generator.py`
+
+**Fase 1 - Generación de datos**:
+- 300 usuarios concurrentes
+- Peticiones cada 1-2 segundos
+- Nuevos usuarios cada segundo
+- Duración mínima: 3 minutos
+- Genera ~2000 registros JSON
+
+**Fase 2 - Envío al Traffic Split**:
+- 150 usuarios concurrentes
+- Peticiones cada 1-4 segundos
+- Envío a endpoints de Kubernetes
+
+**Ejemplo de uso**:
+```bash
+# Instalar Locust
+pip install locust
+
+# Ejecutar generador
+cd locust
+locust -f traffic_generator.py --host=http://VM-IP:8080
+```
+
+### 3. Kubernetes con Traffic Split
+
+**Namespace**: `so1_fase2`
+
+**Configuración del Ingress**:
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: monitor-ingress
+  namespace: so1_fase2
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "50"
+spec:
+  rules:
+  - host: monitor.example.com
+    http:
+      paths:
+      - path: /api/python
+        pathType: Prefix
+        backend:
+          service:
+            name: python-api-service
+            port:
+              number: 5000
+      - path: /api/nodejs
+        pathType: Prefix
+        backend:
+          service:
+            name: nodejs-api-service
+            port:
+              number: 3000
+```
+
+**Despliegue**:
+```bash
+# Crear namespace
+kubectl create namespace so1_fase2
+
+# Aplicar configuraciones
+kubectl apply -f kubernetes/ -n so1_fase2
+
+# Verificar pods
+kubectl get pods -n so1_fase2
+```
+
+### 4. APIs Multi-Lenguaje
+
+#### API Python (Ruta 1)
+**Puerto**: 5000
+**Función**: Recibe métricas y las almacena en Cloud SQL
+```python
+# Ejemplo de endpoint
+@app.route('/metrics', methods=['POST'])
+def save_metrics():
+    data = request.json
+    data['api'] = 'Python'
+    # Guardar en Cloud SQL
+    return jsonify({"status": "saved"})
+```
+
+#### API NodeJS (Ruta 2)
+**Puerto**: 3000
+**Función**: Funcionalidad idéntica a Python API
+```javascript
+// Ejemplo de endpoint
+app.post('/metrics', (req, res) => {
+    const data = req.body;
+    data.api = 'NodeJS';
+    // Guardar en Cloud SQL
+    res.json({"status": "saved"});
+});
+```
+
+#### API WebSocket (NodeJS + Socket.IO)
+**Puerto**: 8080
+**Función**: Comunicación en tiempo real con frontend
+```javascript
+io.on('connection', (socket) => {
+    console.log('Cliente conectado');
+    
+    // Enviar métricas en tiempo real
+    setInterval(() => {
+        socket.emit('metrics', getCurrentMetrics());
+    }, 1000);
+});
+```
+
+### 5. Frontend con WebSockets
+
+**Tecnologías**: React + Socket.IO Client + Chart.js
+
+**Características**:
+- Dashboard en tiempo real
+- Gráficas de CPU y RAM actualizadas en vivo
+- Tabla de información de procesos
+- Conexión WebSocket para datos en tiempo real
+
+**Componentes principales**:
+```jsx
+import io from 'socket.io-client';
+import { Line } from 'react-chartjs-2';
+
+function Dashboard() {
+    const [metrics, setMetrics] = useState({});
+    
+    useEffect(() => {
+        const socket = io('ws://websocket-api-url');
+        
+        socket.on('metrics', (data) => {
+            setMetrics(data);
+        });
+        
+        return () => socket.disconnect();
+    }, []);
+    
+    return (
+        <div>
+            <CPUChart data={metrics.cpu} />
+            <RAMChart data={metrics.ram} />
+            <ProcessTable data={metrics.processes} />
+        </div>
+    );
+}
+```
+
+### 6. Cloud SQL Configuration
+
+**Base de datos**: MySQL 8.0
+**Instancia**: Cloud SQL (Google Cloud)
+
+**Esquema de base de datos**:
+```sql
+CREATE DATABASE sistema_monitoreo_fase2;
+
+CREATE TABLE metricas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    total_ram BIGINT,
+    ram_libre BIGINT,
+    uso_ram BIGINT,
+    porcentaje_ram DECIMAL(5,2),
+    porcentaje_cpu_uso DECIMAL(5,2),
+    porcentaje_cpu_libre DECIMAL(5,2),
+    procesos_corriendo INT,
+    total_procesos INT,
+    procesos_durmiendo INT,
+    procesos_zombie INT,
+    procesos_parados INT,
+    hora TIMESTAMP,
+    api VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 7. Cloud Run Deployment
+
+**Despliegue del Frontend**:
+```bash
+# Build de la imagen
+docker build -t gcr.io/PROJECT-ID/monitor-frontend .
+
+# Push a Google Container Registry
+docker push gcr.io/PROJECT-ID/monitor-frontend
+
+# Deploy a Cloud Run
+gcloud run deploy monitor-frontend \
+  --image gcr.io/PROJECT-ID/monitor-frontend \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated
+```
 
 ## Instalación y Despliegue
 
-### 1. Clonar el Repositorio
+### 1. Prerrequisitos
+
+**Sistema Local**:
+- Ubuntu 22.04 o 24.xx
+- Docker y Docker Compose
+- kubectl
+- Locust (`pip install locust`)
+
+**Google Cloud**:
+- Proyecto GCP activo
+- GKE cluster
+- Cloud SQL instance
+- Cloud Run habilitado
+
+### 2. Configuración de Google Cloud
+
 ```bash
-git clone <url-del-repositorio>
-cd Proyecto1_Fase1
+# Instalar gcloud CLI
+curl https://sdk.cloud.google.com | bash
+
+# Configurar proyecto
+gcloud config set project YOUR-PROJECT-ID
+
+# Crear cluster GKE
+gcloud container clusters create monitor-cluster \
+  --zone us-central1-a \
+  --num-nodes 3
+
+# Configurar kubectl
+gcloud container clusters get-credentials monitor-cluster --zone us-central1-a
 ```
 
-### 2. Dar Permisos de Ejecución a los Scripts
+### 3. Despliegue de Módulos del Kernel
+
 ```bash
-cd bash
-chmod +x *.sh
+cd kernel
+make clean && make
+
+# Cargar módulos
+sudo insmod cpu_<carnet>.ko
+sudo insmod ram_<carnet>.ko
+sudo insmod procesos_<carnet>.ko
+
+# Verificar
+lsmod | grep <carnet>
+cat /proc/procesos_<carnet>
 ```
 
-### 3. Instalación de Módulos del Kernel
+### 4. Construcción y Publicación de Imágenes
+
 ```bash
-./install_modules.sh
-```
-Este script:
-- Instala dependencias del sistema
-- Compila los módulos del kernel
-- Carga los módulos ram_202010040 y cpu_202010040
-- Verifica la instalación correcta
+# Build de todas las imágenes
+docker build -t <dockerhub-user>/python-api:latest apis/python-api/
+docker build -t <dockerhub-user>/nodejs-api:latest apis/nodejs-api/
+docker build -t <dockerhub-user>/websocket-api:latest apis/websocket-api/
+docker build -t <dockerhub-user>/monitor-agente:latest agente/
+docker build -t <dockerhub-user>/monitor-frontend:latest frontend/
 
-### 4. Despliegue de la Aplicación
+# Push a DockerHub
+docker push <dockerhub-user>/python-api:latest
+docker push <dockerhub-user>/nodejs-api:latest
+docker push <dockerhub-user>/websocket-api:latest
+docker push <dockerhub-user>/monitor-agente:latest
+docker push <dockerhub-user>/monitor-frontend:latest
+```
+
+### 5. Despliegue en Kubernetes
+
 ```bash
-./deploy_app.sh
-```
-Este script:
-- Construye las imágenes Docker
-- Opcionalmente sube las imágenes a DockerHub
-- Levanta todos los servicios con Docker Compose
-- Verifica el estado de los servicios
+# Crear namespace
+kubectl create namespace so1_fase2
 
-### 5. Pruebas de Estrés (Opcional)
+# Aplicar configuraciones
+kubectl apply -f kubernetes/ -n so1_fase2
+
+# Verificar estado
+kubectl get pods -n so1_fase2
+kubectl get services -n so1_fase2
+kubectl get ingress -n so1_fase2
+```
+
+### 6. Configuración de Cloud SQL
+
 ```bash
-./stress_containers.sh
-```
-Crea 10 contenedores (5 para CPU, 5 para RAM) que generan carga en el sistema para probar el monitoreo.
+# Crear instancia
+gcloud sql instances create monitor-db \
+  --database-version=MYSQL_8_0 \
+  --cpu=1 \
+  --memory=3840MB \
+  --region=us-central1
 
-## 🖥️ Acceso a los Servicios
+# Crear base de datos
+gcloud sql databases create sistema_monitoreo_fase2 --instance=monitor-db
 
-Una vez desplegado el sistema, los servicios estarán disponibles en:
-
-- **Frontend**: http://localhost:3000
-- **API**: http://localhost:3001
-- **Agente de Monitoreo**: http://localhost:8080
-- **Base de Datos MySQL**: localhost:3306
-
-### Credenciales de Base de Datos
-- **Usuario**: user_monitoreo
-- **Contraseña**: Ingenieria2025.
-- **Base de Datos**: sistema_monitoreo
-
-## Módulos del Kernel
-
-### Módulo de RAM (ram_202010040)
-- **Ubicación**: `/proc/ram_202010040`
-- **Función**: Obtiene información de memoria RAM del sistema
-- **Librerías utilizadas**: `<sys/sysinfo.h>`, `<linux/mm.h>`
-- **Formato de salida**: JSON con información de memoria total, libre y utilizada
-
-**Ejemplo de salida**:
-```json
-{
-  "total": 8192,
-  "libre": 2048,
-  "uso": 6144,
-  "porcentaje": 75.0
-}
+# Crear usuario
+gcloud sql users create monitor_user \
+  --instance=monitor-db \
+  --password=SecurePassword123
 ```
 
-### Módulo de CPU (cpu_202010040)
-- **Ubicación**: `/proc/cpu_202010040`
-- **Función**: Obtiene información de utilización de CPU
-- **Librerías utilizadas**: `<linux/sched.h>`, `<linux/sched/signal.h>`
-- **Formato de salida**: JSON con información de procesos y utilización
+### 7. Despliegue de Frontend en Cloud Run
 
-**Ejemplo de salida**:
-```json
-{
-  "porcentajeUso": 45.2
-}
-```
-
-## Comandos Útiles
-
-### Ver Estado de los Servicios
 ```bash
-docker-compose ps
+# Deploy
+gcloud run deploy monitor-frontend \
+  --image <dockerhub-user>/monitor-frontend:latest \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --port 3000
 ```
 
-### Ver Logs de un Servicio Específico
+## Pruebas de Carga con Locust
+
+### Configuración de Stress Testing
+
+**Container de estrés**: `polinux/stress`
+
 ```bash
-docker-compose logs -f [nombre_servicio]
-# Ejemplo: docker-compose logs -f monitor_api
+# Ejecutar contenedor de estrés en la VM
+docker run --rm -d --name stress-test \
+  polinux/stress \
+  stress --cpu 2 --io 1 --vm 1 --vm-bytes 128M --timeout 300s
 ```
 
-### Reiniciar un Servicio
+### Ejecución de Locust
+
+**Fase 1 - Generación de datos**:
 ```bash
-docker-compose restart [nombre_servicio]
+cd locust
+locust -f traffic_generator.py \
+  --host=http://VM-IP:8080 \
+  -u 300 \
+  -r 1 \
+  -t 180s \
+  --headless
 ```
 
-### Verificar Módulos del Kernel Cargados
+**Fase 2 - Envío al cluster**:
 ```bash
-lsmod | grep 202010040
+locust -f traffic_generator.py \
+  --host=http://INGRESS-IP \
+  -u 150 \
+  -r 1 \
+  -t 300s \
+  --headless
 ```
 
-### Ver Contenido de los Módulos
+## Acceso a los Servicios
+
+### URLs de Acceso
+
+- **Frontend (Cloud Run)**: https://monitor-frontend-xxx-uc.a.run.app
+- **Ingress (Kubernetes)**: http://EXTERNAL-IP
+- **VM Agente**: http://VM-IP:8080
+- **Cloud SQL**: Acceso via APIs
+
+### Endpoints de APIs
+
+**Python API (Ruta 1)**:
+- `POST /api/python/metrics` - Guardar métricas
+
+**NodeJS API (Ruta 2)**:
+- `POST /api/nodejs/metrics` - Guardar métricas
+
+**WebSocket API**:
+- `WS /socket.io` - Conexión en tiempo real
+
+## Monitoreo y Debugging
+
+### Comandos Kubernetes Útiles
+
 ```bash
-cat /proc/ram_202010040
-cat /proc/cpu_202010040
+# Ver logs de pods
+kubectl logs -f POD-NAME -n so1_fase2
+
+# Describir recursos
+kubectl describe pod POD-NAME -n so1_fase2
+kubectl describe service SERVICE-NAME -n so1_fase2
+
+# Port-forward para debugging
+kubectl port-forward service/python-api-service 5000:5000 -n so1_fase2
+
+# Ver métricas del cluster
+kubectl top nodes
+kubectl top pods -n so1_fase2
 ```
 
-### Ver Contenedores de Estrés
+### Verificación de Traffic Split
+
 ```bash
-docker ps --filter name=stress-
+# Verificar distribución de tráfico
+kubectl get ingress -n so1_fase2 -o yaml
+
+# Monitorear logs de ambas APIs
+kubectl logs -f deployment/python-api -n so1_fase2 &
+kubectl logs -f deployment/nodejs-api -n so1_fase2 &
+```
+
+### Debugging de Cloud SQL
+
+```bash
+# Conectar a Cloud SQL
+gcloud sql connect monitor-db --user=monitor_user
+
+# Ver conexiones activas
+SHOW PROCESSLIST;
+
+# Ver métricas guardadas
+SELECT api, COUNT(*) FROM metricas GROUP BY api;
 ```
 
 ## Limpieza del Sistema
 
-Para limpiar completamente el sistema y liberar recursos:
+### Limpiar Kubernetes
 
 ```bash
-./cleanup.sh
+# Eliminar recursos del namespace
+kubectl delete namespace so1_fase2
+
+# Limpiar cluster (opcional)
+gcloud container clusters delete monitor-cluster --zone us-central1-a
 ```
 
-Este script:
-- Detiene y elimina todos los contenedores
-- Elimina imágenes del proyecto
-- Limpia volumes y networks huérfanos
-- Descarga los módulos del kernel
-- Limpia archivos compilados
+### Limpiar Cloud Resources
 
-## Docker Compose
-
-### Servicios Definidos
-
-1. **monitor_db**: Base de datos MySQL con persistencia
-2. **monitor_api**: API en Node.js para comunicación con BD
-3. **monitor_agente**: Agente de monitoreo en Go
-4. **monitor_frontend**: Frontend web en React
-
-### Volúmenes
-- `db_data`: Persistencia de datos de MySQL
-
-### Redes
-- `monitor-network`: Red bridge para comunicación entre servicios
-
-## Solución de Problemas
-
-### Error: Módulos del Kernel No Cargan
 ```bash
-# Verificar headers del kernel
-sudo apt-get install linux-headers-$(uname -r)
+# Eliminar instancia Cloud SQL
+gcloud sql instances delete monitor-db
 
-# Recompilar módulos
+# Eliminar servicio Cloud Run
+gcloud run services delete monitor-frontend --region us-central1
+```
+
+### Limpiar Módulos del Kernel
+
+```bash
+sudo rmmod procesos_<carnet>
+sudo rmmod cpu_<carnet>
+sudo rmmod ram_<carnet>
+
 cd kernel
 make clean
-make
-sudo insmod ram_202010040.ko
-sudo insmod cpu_202010040.ko
 ```
 
-### Error: Puerto en Uso
+## Formato de Datos
+
+### JSON de Métricas Completo
+
+```json
+{
+  "total_ram": 2072,
+  "ram_libre": 1110552576,
+  "uso_ram": 442,
+  "porcentaje_ram": 22,
+  "porcentaje_cpu_uso": 22,
+  "porcentaje_cpu_libre": 88,
+  "procesos_corriendo": 123,
+  "total_procesos": 233,
+  "procesos_durmiendo": 65,
+  "procesos_zombie": 65,
+  "procesos_parados": 65,
+  "hora": "2025-06-17 02:21:54",
+  "api": "Python"  // o "NodeJS"
+}
+```
+
+## Consideraciones de Rendimiento
+
+### Optimizaciones Kubernetes
+
+- **Resource Limits**: Configurar limits y requests para todos los pods
+- **Horizontal Pod Autoscaler**: Auto-escalado basado en CPU/memoria
+- **Persistent Volumes**: Para datos que requieren persistencia
+
+### Optimizaciones Base de Datos
+
+- **Índices**: Crear índices en columnas frecuentemente consultadas
+- **Connection Pooling**: Configurar pool de conexiones en las APIs
+- **Particionamiento**: Para tablas con gran volumen de datos
+
+### Optimizaciones Frontend
+
+- **Lazy Loading**: Cargar componentes bajo demanda
+- **Memoización**: React.memo para componentes pesados
+- **WebSocket Throttling**: Limitar frecuencia de actualizaciones
+
+## Solución de Problemas Comunes
+
+### Error: Pods en estado Pending
+
 ```bash
-# Verificar puertos ocupados
-sudo netstat -tulpn | grep -E ':300[0-1]|:3306|:8080'
+# Verificar recursos del cluster
+kubectl describe nodes
 
-# Detener servicios que ocupan puertos
-sudo docker-compose down
+# Verificar eventos
+kubectl get events -n so1_fase2 --sort-by='.lastTimestamp'
 ```
 
-### Error: Permisos Insuficientes
+### Error: No se puede conectar a Cloud SQL
+
 ```bash
-# Dar permisos a scripts
-chmod +x bash/*.sh
+# Verificar Cloud SQL Proxy
+cloud_sql_proxy -instances=PROJECT:REGION:INSTANCE=tcp:3306
 
-# Ejecutar con sudo si es necesario
-sudo ./install_modules.sh
+# Verificar credenciales
+kubectl get secret cloudsql-db-credentials -n so1_fase2 -o yaml
 ```
 
-### Error: Imágenes Docker No Encontradas
+### Error: Traffic Split no funciona
+
 ```bash
-# Reconstruir imágenes
-docker-compose build --no-cache
+# Verificar configuración del Ingress
+kubectl get ingress -n so1_fase2 -o yaml
 
-# Verificar nombres de imágenes
-docker images | grep proyecto1
+# Verificar servicios backend
+kubectl get endpoints -n so1_fase2
 ```
 
-## Funcionalidades del Sistema
+### Error: WebSocket no conecta
 
-### Frontend
-- Dashboard en tiempo real
-- Gráficas de utilización de CPU y RAM
-- Actualización automática de métricas
-- Interfaz responsive
+```bash
+# Verificar CORS en WebSocket API
+# Verificar puerto expuesto en Cloud Run
+# Revisar logs del frontend y WebSocket API
+```
 
-### API
-- Endpoints RESTful para métricas
-- Almacenamiento de datos históricos
-- Validación de datos
-- Manejo de errores
+## Mejores Prácticas
 
-### Agente
-- Recolección de datos mediante goroutines
-- Comunicación con módulos del kernel
-- Envío periódico de métricas a la API
-- Manejo de concurrencia con channels
+### Seguridad
 
-## Despliegue en DockerHub
+- Usar Service Accounts para acceso a Cloud SQL
+- Configurar Network Policies en Kubernetes
+- Implementar HTTPS en todos los endpoints
+- Rotar credenciales regularmente
 
-Para subir las imágenes a DockerHub:
+### Desarrollo
 
-1. **Modificar el script deploy_app.sh** con los nombres correctos de imágenes:
-   ```bash
-   docker tag proyecto1_fase1-monitor_api tu_usuario/monitor-api:latest
-   docker tag proyecto1_fase1-monitor_agente tu_usuario/monitor-agente:latest
-   docker tag proyecto1_fase1-monitor_frontend tu_usuario/monitor-frontend:latest
-   ```
+- Usar ConfigMaps para configuración
+- Implementar Health Checks en todos los servicios
+- Configurar Liveness y Readiness Probes
+- Usar versioning en imágenes Docker
 
-2. **Ejecutar el despliegue** y seleccionar "y" cuando pregunte por DockerHub
+### Monitoreo
+
+- Configurar Google Cloud Monitoring
+- Implementar logging estructurado
+- Configurar alertas para métricas críticas
+- Usar Grafana para visualización avanzada
+
+---
 
 ## Notas Importantes
 
-- En caso no se pueda eliminar los contenedores, debe modificarse el codigo para utilizar el metodo nuclear
-
+- **Restricción importante**: Solo Locust debe ejecutarse localmente, todo lo demás debe estar en la nube
+- **DockerHub**: Todas las imágenes deben estar publicadas y ser consumidas desde DockerHub
+- **Tiempo de calificación**: 15 minutos, tener todo preparado
+- **Autenticidad**: Prepararse para explicaciones y modificaciones de código durante la calificación

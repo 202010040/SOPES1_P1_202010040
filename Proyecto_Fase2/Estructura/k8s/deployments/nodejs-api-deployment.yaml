@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-api
+  namespace: so1-fase2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nodejs-api
+  template:
+    metadata:
+      labels:
+        app: nodejs-api
+    spec:
+      containers:
+      - name: nodejs-api
+        image: marcoscruz2001/nodejs-api:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DB_HOST
+          value: "TU_CLOUD_SQL_IP"
+        - name: DB_USER
+          value: "root"
+        - name: DB_PASSWORD
+          value: "tu-password"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-api-service
+  namespace: so1-fase2
+spec:
+  selector:
+    app: nodejs-api
+  ports:
+  - port: 80
+    targetPort: 3000
+  type: ClusterIP

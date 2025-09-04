@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  agente-monitoreo:
+    image: marcoscruz2001/agente-monitoreo:latest 
+    container_name: agente-monitoreo
+    ports:
+      - "3001:3001"
+    environment:
+      - API_PORT=3001
+    restart: unless-stopped
+    
+
+    privileged: true
+    volumes:
+      - /proc:/host/proc:ro
+    
+    
+    # Healthcheck para verificar que la API responde
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# Opcional: Red personalizada
+networks:
+  default:
+    name: monitoring-network

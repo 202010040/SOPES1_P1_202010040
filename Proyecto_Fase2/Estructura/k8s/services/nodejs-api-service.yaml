@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-api-service
+  namespace: so1-fase2
+  labels:
+    app: nodejs-api 
+    version: v1
+spec:
+  selector:
+    app: nodejs-api
+  ports:
+  - name: http
+    port: 80
+    targetPort: 4001
+    protocol: TCP
+  type: ClusterIP
