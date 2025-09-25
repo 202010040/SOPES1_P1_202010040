@@ -1,0 +1,117 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Dashboard de Procesos y Contenedores",
+    "tags": ["sistema", "procesos", "contenedores"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Procesos Totales",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "SELECT total_processes FROM system_metrics ORDER BY timestamp DESC LIMIT 1",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds",
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 200},
+                  {"color": "red", "value": 500}
+                ]
+              }
+            }
+          }
+        },
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Procesos en Ejecución",
+        "type": "stat",
+        "targets": [
+          {"expr": "SELECT running_processes FROM system_metrics ORDER BY timestamp DESC LIMIT 1", "refId": "A"}
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Procesos en Espera",
+        "type": "stat",
+        "targets": [
+          {"expr": "SELECT sleeping_processes FROM system_metrics ORDER BY timestamp DESC LIMIT 1", "refId": "A"}
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Memoria RAM Total",
+        "type": "stat",
+        "targets": [
+          {"expr": "SELECT total_ram FROM system_metrics ORDER BY timestamp DESC LIMIT 1", "refId": "A"}
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 4}
+      },
+      {
+        "id": 5,
+        "title": "Memoria RAM Libre",
+        "type": "stat",
+        "targets": [
+          {"expr": "SELECT free_ram FROM system_metrics ORDER BY timestamp DESC LIMIT 1", "refId": "A"}
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 4}
+      },
+      {
+        "id": 6,
+        "title": "Uso de RAM a lo Largo del Tiempo",
+        "type": "timeseries",
+        "targets": [
+          {"expr": "SELECT timestamp, used_ram FROM system_metrics", "refId": "A"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "Contenedores Eliminados en el Tiempo",
+        "type": "timeseries",
+        "targets": [
+          {"expr": "SELECT timestamp, containers_removed FROM container_metrics", "refId": "A"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 8,
+        "title": "Top 5 Contenedores por Uso de RAM",
+        "type": "piechart",
+        "targets": [
+          {"expr": "SELECT container_id, ram_usage FROM container_metrics ORDER BY ram_usage DESC LIMIT 5", "refId": "A"}
+        ],
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 16}
+      },
+      {
+        "id": 9,
+        "title": "Top 5 Contenedores por Uso de CPU",
+        "type": "piechart",
+        "targets": [
+          {"expr": "SELECT container_id, cpu_usage FROM container_metrics ORDER BY cpu_usage DESC LIMIT 5", "refId": "A"}
+        ],
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 16}
+      },
+      {
+        "id": 10,
+        "title": "Extra: VSZ vs RSS (Top 10 Procesos)",
+        "type": "barchart",
+        "targets": [
+          {"expr": "SELECT pid, vsz, rss FROM system_metrics ORDER BY vsz DESC LIMIT 10", "refId": "A"}
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      }
+    ]
+  }
+}
