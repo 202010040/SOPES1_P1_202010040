@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -77,14 +78,18 @@ type Container struct {
 
 // Configuración del daemon
 type DaemonConfig struct {
-	ContainerInfoPath  string
-	SystemInfoPath     string
-	DBPath             string
-	LoopInterval       time.Duration
-	MinLowConsumption  int
-	MinHighConsumption int
-	MemoryThreshold    int64 // KB
-	CPUThreshold       int
+	ContainerInfoPath      string
+	SystemInfoPath         string
+	DBPath                 string
+	LoopInterval           time.Duration
+	MinLowConsumption      int
+	MinHighConsumption     int
+	MemoryThreshold        int64 // KB
+	CPUThreshold           int
+	CreateContainersScript string
+	CleanContainersScript  string
+	KernelModulesScript    string
+	BashDir                string
 }
 
 type Daemon struct {
@@ -95,19 +100,37 @@ type Daemon struct {
 }
 
 func main() {
+	// Obtener directorio actual del proyecto
+	currentDir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Error obteniendo directorio actual: %v", err)
+	}
+
+	// El directorio raíz del proyecto (subir un nivel desde /Daemon)
+	projectRoot := filepath.Dir(currentDir)
+
 	config := &DaemonConfig{
-		ContainerInfoPath:  "/proc/continfo_so1_202100265",
-		SystemInfoPath:     "/proc/sysinfo_so1_202100265",
-		DBPath:             "./monitoring.db",
-		LoopInterval:       20 * time.Second,
-		MinLowConsumption:  3,
-		MinHighConsumption: 2,
-		MemoryThreshold:    30000, // 30MB en KB
-		CPUThreshold:       80,    // 80%
+		ContainerInfoPath:      "/proc/continfo_so1_202100265",
+		SystemInfoPath:         "/proc/sysinfo_so1_202100265",
+		DBPath:                 "./monitoring.db",
+		LoopInterval:           20 * time.Second,
+		MinLowConsumption:      3,
+		MinHighConsumption:     2,
+		MemoryThreshold:        30000, // 30MB en KB
+		CPUThreshold:           80,    // 80%
+		CreateContainersScript: filepath.Join(projectRoot, "Bash", "create_containers.sh"),
+		CleanContainersScript:  filepath.Join(projectRoot, "Bash", "clean_containers.sh"),
+		KernelModulesScript:    filepath.Join(projectRoot, "load_kernel_modules.sh"),
+		BashDir:                filepath.Join(projectRoot, "Bash"),
 	}
 
 	daemon := &Daemon{
 		config: config,
+	}
+
+	// Verificar que los scripts existen
+	if err := daemon.validateScripts(); err != nil {
+		log.Fatalf("Error validando scripts: %v", err)
 	}
 
 	// Inicializar la base de datos
@@ -121,6 +144,26 @@ func main() {
 
 	// Iniciar el daemon
 	daemon.start()
+}
+
+func (d *Daemon) validateScripts() error {
+	scripts := []string{
+		d.config.CreateContainersScript,
+		d.config.CleanContainersScript,
+	}
+
+	for _, script := range scripts {
+		if _, err := os.Stat(script); os.IsNotExist(err) {
+			return fmt.Errorf("script no encontrado: %s", script)
+		}
+
+		// Hacer el script ejecutable
+		if err := os.Chmod(script, 0755); err != nil {
+			log.Printf("Advertencia: No se pudo hacer ejecutable %s: %v", script, err)
+		}
+	}
+
+	return nil
 }
 
 func (d *Daemon) initDB() error {
@@ -176,27 +219,74 @@ func (d *Daemon) initDB() error {
 func (d *Daemon) start() {
 	log.Println("Iniciando daemon de monitoreo...")
 
-	// 1. Crear contenedor de Grafana
+	// 1. Ejecutar script de limpieza inicial
+	if err := d.executeCleanContainers(); err != nil {
+		log.Printf("Error en limpieza inicial: %v", err)
+	}
+
+	// 2. Crear contenedor de Grafana
 	if err := d.startGrafana(); err != nil {
 		log.Printf("Error iniciando Grafana: %v", err)
 	}
 
-	// 2. Iniciar cronjob
+	// 3. Iniciar cronjob
 	if err := d.startCronJob(); err != nil {
 		log.Printf("Error iniciando cronjob: %v", err)
 	}
 
-	// 3. Cargar módulos de kernel
+	// 4. Construir imágenes Docker si no existen
+	if err := d.buildDockerImages(); err != nil {
+		log.Printf("Error construyendo imágenes Docker: %v", err)
+	}
+
+	// 5. Cargar módulos de kernel
 	if err := d.loadKernelModules(); err != nil {
 		log.Printf("Error cargando módulos de kernel: %v", err)
 	}
 
-	// 4. Loop principal
+	// 5. Crear contenedores iniciales
+	if err := d.executeCreateContainers(); err != nil {
+		log.Printf("Error creando contenedores iniciales: %v", err)
+	}
+
+	// 6. Loop principal
 	d.mainLoop()
 }
 
+func (d *Daemon) executeCreateContainers() error {
+	log.Println("Ejecutando script de creación de contenedores...")
+
+	cmd := exec.Command("bash", d.config.CreateContainersScript)
+	cmd.Dir = d.config.BashDir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Output del script create_containers: %s", string(output))
+		return fmt.Errorf("error ejecutando create_containers.sh: %v", err)
+	}
+
+	log.Printf("Script create_containers ejecutado exitosamente: %s", string(output))
+	return nil
+}
+
+func (d *Daemon) executeCleanContainers() error {
+	log.Println("Ejecutando script de limpieza de contenedores...")
+
+	cmd := exec.Command("bash", d.config.CleanContainersScript)
+	cmd.Dir = d.config.BashDir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Output del script clean_containers: %s", string(output))
+		return fmt.Errorf("error ejecutando clean_containers.sh: %v", err)
+	}
+
+	log.Printf("Script clean_containers ejecutado exitosamente: %s", string(output))
+	return nil
+}
+
 func (d *Daemon) startGrafana() error {
-	log.Println("Iniciando contenedor de Grafana...")
+	log.Println("Iniciando Grafana...")
 
 	// Verificar si ya existe
 	cmd := exec.Command("docker", "ps", "-q", "-f", "name=grafana-monitoring")
@@ -206,28 +296,66 @@ func (d *Daemon) startGrafana() error {
 		return nil
 	}
 
-	// Crear y ejecutar contenedor de Grafana
-	cmd = exec.Command("docker", "run", "-d",
+	// Obtener directorio del proyecto (un nivel arriba del Daemon)
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("error obteniendo directorio actual: %v", err)
+	}
+
+	projectRoot := filepath.Dir(currentDir)
+
+	// Intentar primero con docker compose (nuevo comando)
+	cmd = exec.Command("docker", "compose", "up", "-d", "grafana")
+	cmd.Dir = projectRoot
+
+	if err := cmd.Run(); err != nil {
+		log.Printf("Docker compose falló, intentando con docker-compose: %v", err)
+
+		// Intentar con docker-compose (comando legacy)
+		cmd = exec.Command("docker-compose", "up", "-d", "grafana")
+		cmd.Dir = projectRoot
+
+		if err := cmd.Run(); err != nil {
+			log.Printf("Docker-compose falló, intentando con docker run: %v", err)
+			return d.startGrafanaWithDocker()
+		}
+	}
+
+	d.grafanaStarted = true
+	log.Println("Grafana iniciado con compose en puerto 3000")
+	return nil
+}
+
+func (d *Daemon) startGrafanaWithDocker() error {
+	log.Println("Iniciando contenedor de Grafana con docker run...")
+
+	// Primero detener cualquier contenedor existente con el mismo nombre
+	exec.Command("docker", "stop", "grafana-monitoring").Run()
+	exec.Command("docker", "rm", "grafana-monitoring").Run()
+
+	cmd := exec.Command("docker", "run", "-d",
 		"--name", "grafana-monitoring",
 		"-p", "3000:3000",
 		"-e", "GF_SECURITY_ADMIN_PASSWORD=admin",
 		"-v", "grafana-data:/var/lib/grafana",
+		"--restart", "unless-stopped",
 		"grafana/grafana:latest")
 
-	if err := cmd.Run(); err != nil {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("Error detallado de Docker: %s", string(output))
 		return fmt.Errorf("error creando contenedor de Grafana: %v", err)
 	}
 
-	d.grafanaStarted = true
-	log.Println("Grafana iniciado en puerto 3000")
+	log.Printf("Grafana iniciado exitosamente: %s", string(output))
 	return nil
 }
 
 func (d *Daemon) startCronJob() error {
 	log.Println("Configurando cronjob para creación de contenedores...")
 
-	// Crear entrada de cron
-	cronEntry := "* * * * * /bin/bash " + getCurrentDir() + "/bash/create_containers.sh"
+	// Crear entrada de cron que ejecute el script cada minuto
+	cronEntry := fmt.Sprintf("* * * * * %s", d.config.CreateContainersScript)
 
 	cmd := exec.Command("bash", "-c", fmt.Sprintf("(crontab -l 2>/dev/null; echo '%s') | crontab -", cronEntry))
 	if err := cmd.Run(); err != nil {
@@ -242,8 +370,14 @@ func (d *Daemon) startCronJob() error {
 func (d *Daemon) loadKernelModules() error {
 	log.Println("Cargando módulos de kernel...")
 
-	// Aquí deberías cargar tus módulos específicos
-	// Por ahora asumimos que ya están cargados
+	// Si existe el script de módulos, ejecutarlo
+	if _, err := os.Stat(d.config.KernelModulesScript); err == nil {
+		cmd := exec.Command("bash", d.config.KernelModulesScript)
+		if err := cmd.Run(); err != nil {
+			log.Printf("Error ejecutando script de módulos: %v", err)
+		}
+	}
+
 	log.Println("Módulos de kernel verificados")
 	return nil
 }
@@ -269,6 +403,10 @@ func (d *Daemon) processIteration() {
 	systemInfo, err := d.readSystemInfo()
 	if err != nil {
 		log.Printf("Error leyendo información del sistema: %v", err)
+		log.Printf("Verificando si el archivo existe: %s", d.config.SystemInfoPath)
+		if _, statErr := os.Stat(d.config.SystemInfoPath); os.IsNotExist(statErr) {
+			log.Printf("ADVERTENCIA: Archivo de sistema no existe. ¿Están cargados los módulos de kernel?")
+		}
 		return
 	}
 
@@ -276,6 +414,10 @@ func (d *Daemon) processIteration() {
 	containerInfo, err := d.readContainerInfo()
 	if err != nil {
 		log.Printf("Error leyendo información de contenedores: %v", err)
+		log.Printf("Verificando si el archivo existe: %s", d.config.ContainerInfoPath)
+		if _, statErr := os.Stat(d.config.ContainerInfoPath); os.IsNotExist(statErr) {
+			log.Printf("ADVERTENCIA: Archivo de contenedores no existe. ¿Están cargados los módulos de kernel?")
+		}
 		return
 	}
 
@@ -368,15 +510,27 @@ func (d *Daemon) analyzeAndManageContainers(info *ContainerInfo) {
 
 	// Verificar y ajustar según restricciones
 	d.enforceContainerLimits(lowConsumption, highConsumption)
+
+	// Si necesitamos más contenedores, crear algunos
+	totalNeeded := d.config.MinLowConsumption + d.config.MinHighConsumption
+	totalCurrent := len(lowConsumption) + len(highConsumption)
+
+	if totalCurrent < totalNeeded {
+		log.Printf("Se necesitan más contenedores. Actual: %d, Necesario: %d", totalCurrent, totalNeeded)
+		if err := d.executeCreateContainers(); err != nil {
+			log.Printf("Error creando contenedores adicionales: %v", err)
+		}
+	}
 }
 
 func (d *Daemon) filterContainers(containers []Container) []Container {
 	var filtered []Container
 	for _, container := range containers {
 		// Excluir Grafana y otros servicios del sistema
-		if !strings.Contains(container.Name, "grafana") &&
-			!strings.Contains(container.Name, "containerd") &&
-			!strings.Contains(container.Name, "dockerd") {
+		if !strings.Contains(strings.ToLower(container.Name), "grafana") &&
+			!strings.Contains(strings.ToLower(container.Name), "containerd") &&
+			!strings.Contains(strings.ToLower(container.Name), "dockerd") &&
+			!strings.Contains(strings.ToLower(container.Cmdline), "grafana") {
 			filtered = append(filtered, container)
 		}
 	}
@@ -500,10 +654,51 @@ func (d *Daemon) setupSignalHandlers() {
 	}()
 }
 
+func (d *Daemon) buildDockerImages() error {
+	log.Println("Verificando y construyendo imágenes Docker...")
+
+	images := map[string]string{
+		"high-cpu-image":        "high-cpu",
+		"high-ram-image":        "high-ram",
+		"low-consumption-image": "low-consumption",
+	}
+
+	for imageName, dirName := range images {
+		// Verificar si la imagen ya existe
+		cmd := exec.Command("docker", "images", "-q", imageName)
+		if output, err := cmd.Output(); err == nil && len(strings.TrimSpace(string(output))) > 0 {
+			log.Printf("Imagen %s ya existe", imageName)
+			continue
+		}
+
+		log.Printf("Construyendo imagen %s...", imageName)
+
+		// Construir la imagen
+		dockerDir := filepath.Join(d.config.BashDir, "docker-images", dirName)
+		cmd = exec.Command("docker", "build", "-t", imageName, ".")
+		cmd.Dir = dockerDir
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Error construyendo %s: %v", imageName, err)
+			log.Printf("Output: %s", string(output))
+			continue
+		}
+
+		log.Printf("Imagen %s construida exitosamente", imageName)
+	}
+
+	return nil
+}
 func (d *Daemon) cleanup() {
+	// Ejecutar script de limpieza de contenedores
+	log.Println("Ejecutando limpieza de contenedores...")
+	d.executeCleanContainers()
+
 	// Eliminar cronjob
 	if d.cronJobActive {
-		exec.Command("bash", "-c", "crontab -l | grep -v create_containers.sh | crontab -").Run()
+		cmd := exec.Command("bash", "-c", fmt.Sprintf("crontab -l | grep -v '%s' | crontab -", d.config.CreateContainersScript))
+		cmd.Run()
 		log.Println("Cronjob eliminado")
 	}
 
@@ -513,12 +708,4 @@ func (d *Daemon) cleanup() {
 	}
 
 	log.Println("Limpieza completada")
-}
-
-func getCurrentDir() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return dir
 }
